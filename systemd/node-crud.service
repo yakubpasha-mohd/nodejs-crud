@@ -1,0 +1,13 @@
+[Unit]
+Description=Node CRUD
+After=network.target mysqld.service
+
+[Service]
+User=ec2-user
+WorkingDirectory=/home/ec2-user/node-mysql-crud
+EnvironmentFile=/home/ec2-user/node-mysql-crud/.env
+ExecStart=/usr/bin/node /home/ec2-user/node-mysql-crud/index.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
