@@ -1,1 +1,185 @@
-<!doctype html><html><body><h1>Todos v2 React UI with Edit/View</h1></body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Todos v2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body{font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;margin:2rem;max-width:900px}
+      h1{margin:0 0 1rem}
+      .toolbar{display:flex;gap:.5rem;align-items:center;margin:.75rem 0}
+      input,button,textarea{padding:.5rem;font-size:1rem}
+      ul{list-style:none;padding:0}
+      li{display:flex;gap:.75rem;align-items:center;border:1px solid #ddd;border-radius:.5rem;padding:.5rem .75rem;margin:.5rem 0}
+      .title{font-weight:600}
+      .desc{opacity:.8}
+      .spacer{flex:1}
+      small{opacity:.7}
+      .done{text-decoration:line-through; opacity:.6}
+      .pill{border:1px solid #bbb;border-radius:1rem;padding:.2rem .5rem;font-size:.85rem}
+      dialog{border:none;border-radius:0.75rem;box-shadow:0 10px 30px rgba(0,0,0,.2);padding:1rem;max-width:500px}
+      dialog::backdrop{background:rgba(0,0,0,.2)}
+      .muted{opacity:.6}
+    </style>
+  </head>
+  <body>
+    <h1>Todos</h1>
+
+    <div class="toolbar">
+      <input id="newTitle" placeholder="Title" />
+      <input id="newDesc" placeholder="Description (optional)" />
+      <button id="addBtn">Add</button>
+      <div class="spacer"></div>
+      <input id="q" placeholder="Search..." />
+      <span class="pill muted" id="count"></span>
+    </div>
+
+    <ul id="list"></ul>
+
+    <dialog id="viewDlg">
+      <h3 id="vTitle"></h3>
+      <p class="muted"><span id="vTime"></span></p>
+      <p id="vDesc"></p>
+      <p>Status: <strong id="vStatus"></strong></p>
+      <div style="text-align:right">
+        <button id="closeDlg">Close</button>
+      </div>
+    </dialog>
+
+    <!-- React + Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+
+      const api = {
+        async list(){ const r = await fetch('/todos'); return r.json(); },
+        async get(id){ const r = await fetch('/todos/'+id); return r.json(); },
+        async create(data){ const r = await fetch('/todos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); return r.json(); },
+        async update(id, data){ const r = await fetch('/todos/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}); return r.json(); },
+        async del(id){ const r = await fetch('/todos/'+id,{method:'DELETE'}); return r.json(); }
+      };
+
+      function Row({t, onChange, onDelete, onView}){
+        const [editing, setEditing] = useState(false);
+        const [etitle, setEtitle] = useState(t.title);
+        const [edesc, setEdesc] = useState(t.description || '');
+
+        const save = async () => {
+          const updated = await api.update(t.id, { title: etitle, description: edesc, is_done: t.is_done });
+          if (updated && updated.id) {
+            onChange(updated);
+            setEditing(false);
+          } else {
+            alert('Save failed');
+          }
+        };
+
+        const toggle = async () => {
+          const updated = await api.update(t.id, { is_done: !t.is_done });
+          if (updated && updated.id) onChange(updated);
+        };
+
+        return (
+          <li>
+            <input type="checkbox" checked={!!t.is_done} onChange={toggle} />
+            {editing ? (
+              <>
+                <input value={etitle} onChange={e=>setEtitle(e.target.value)} placeholder="Title" />
+                <input value={edesc} onChange={e=>setEdesc(e.target.value)} placeholder="Description" style={{minWidth:'240px'}} />
+              </>
+            ) : (
+              <>
+                <span className={"title " + (t.is_done ? 'done' : '')}>{t.title}</span>
+                {t.description ? <span className="desc">— {t.description}</span> : null}
+              </>
+            )}
+            <div className="spacer"></div>
+            <small>{new Date(t.updated_at || t.created_at).toLocaleString()}</small>
+            {editing ? (
+              <>
+                <button onClick={save}>Save</button>
+                <button onClick={()=>setEditing(false)}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button onClick={()=>setEditing(true)}>Edit</button>
+                <button onClick={()=>onView(t.id)}>View</button>
+                <button onClick={()=>onDelete(t.id)}>Delete</button>
+              </>
+            )}
+          </li>
+        );
+      }
+
+      function App(){
+        const [all, setAll] = useState([]);
+        const [q, setQ] = useState('');
+        const [title, setTitle] = useState('');
+        const [desc, setDesc] = useState('');
+
+        const load = async () => setAll(await api.list());
+        useEffect(()=>{ load(); },[]);
+
+        const filtered = all.filter(x =>
+          (x.title || '').toLowerCase().includes(q.toLowerCase()) ||
+          (x.description || '').toLowerCase().includes(q.toLowerCase())
+        );
+
+        const add = async () => {
+          if(!title.trim()) return alert('Title required');
+          const created = await api.create({ title, description: desc });
+          if (created && created.id) {
+            setAll([created, ...all]);
+            setTitle(''); setDesc('');
+          } else {
+            alert('Create failed');
+          }
+        };
+
+        const onChange = (u) => setAll(all.map(x => x.id===u.id ? u : x));
+        const onDelete = async (id) => {
+          const r = await api.del(id);
+          if (r && r.deleted) setAll(all.filter(x => x.id!==id));
+        };
+
+        const onView = async (id) => {
+          const d = await api.get(id);
+          if(!d || !d.id){ alert('Not found'); return; }
+          document.getElementById('vTitle').textContent = d.title;
+          document.getElementById('vDesc').textContent = d.description || '(no description)';
+          document.getElementById('vStatus').textContent = d.is_done ? 'Done' : 'Open';
+          document.getElementById('vTime').textContent = 'Updated: ' + new Date(d.updated_at || d.created_at).toLocaleString();
+          document.getElementById('viewDlg').showModal();
+        };
+
+        useEffect(()=>{
+          document.getElementById('count').textContent = filtered.length + '/' + all.length;
+          document.getElementById('closeDlg').onclick = ()=>document.getElementById('viewDlg').close();
+        }, [filtered.length, all.length]);
+
+        return (
+          <div>
+            <div className="toolbar">
+              <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Title" />
+              <input value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Description (optional)" />
+              <button onClick={add}>Add</button>
+              <div className="spacer"></div>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search..." />
+              <span className="pill muted" id="count"></span>
+            </div>
+            <ul>
+              {filtered.map(t => (
+                <Row key={t.id} t={t} onChange={onChange} onDelete={onDelete} onView={onView} />
+              ))}
+            </ul>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.body).render(<App/>);
+    </script>
+  </body>
+</html>
